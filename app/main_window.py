@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.views.server_lists_view import ServerListsView
+from app.views.servers_view import ServersView
 
 
 class MainWindow(QMainWindow):
@@ -19,7 +20,13 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("ServerAdmin")
         self.resize(1400, 800)
 
+        self.init_ui()
+
+    def init_ui(self):
+
+        # ==========================
         # Widget central
+        # ==========================
         central = QWidget()
         self.setCentralWidget(central)
 
@@ -29,7 +36,6 @@ class MainWindow(QMainWindow):
         # ==========================
         # Menú lateral
         # ==========================
-
         menu = QVBoxLayout()
 
         titulo = QLabel("ServerAdmin")
@@ -58,30 +64,34 @@ class MainWindow(QMainWindow):
         menu_widget.setFixedWidth(220)
 
         # ==========================
-        # Páginas
+        # Páginas (Stack)
         # ==========================
-
         self.pages = QStackedWidget()
 
+        # Página 0: Dashboard
         self.dashboard = QLabel("Dashboard")
         self.dashboard.setStyleSheet("font-size:28px;")
 
+        # Página 1: Listas
         self.server_lists_view = ServerListsView()
 
-        self.pages.addWidget(self.dashboard)           # Página 0
-        self.pages.addWidget(self.server_lists_view)   # Página 1
+        # Página 2: Servidores (CRUD)
+        self.servers_view = ServersView()
+
+        # Agregar páginas al stack
+        self.pages.addWidget(self.dashboard)            # 0
+        self.pages.addWidget(self.server_lists_view)    # 1
+        self.pages.addWidget(self.servers_view)         # 2
 
         # ==========================
         # Layout principal
         # ==========================
-
         layout.addWidget(menu_widget)
         layout.addWidget(self.pages)
 
         # ==========================
         # Eventos
         # ==========================
-
         self.btn_dashboard.clicked.connect(
             lambda: self.pages.setCurrentIndex(0)
         )
@@ -90,5 +100,11 @@ class MainWindow(QMainWindow):
             lambda: self.pages.setCurrentIndex(1)
         )
 
-        # Mostrar Dashboard al iniciar
+        self.btn_servidores.clicked.connect(
+            lambda: self.pages.setCurrentIndex(2)
+        )
+
+        # ==========================
+        # Vista inicial
+        # ==========================
         self.pages.setCurrentIndex(0)
