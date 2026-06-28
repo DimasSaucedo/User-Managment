@@ -11,6 +11,9 @@ from PySide6.QtWidgets import (
 from app.ui.views.server_lists_view import ServerListsView
 from app.ui.views.servers_view import ServersView
 from app.ui.audit_log_view import AuditLogView
+from app.ui.views.users_view import UsersView
+
+from app.services.ssh_service import SSHService
 
 
 class MainWindow(QMainWindow):
@@ -20,6 +23,11 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle("ServerAdmin")
         self.resize(1400, 800)
+
+        # ==========================
+        # SERVICES (GLOBAL APP STATE)
+        # ==========================
+        self.ssh_service = SSHService()
 
         self.init_ui()
 
@@ -31,11 +39,10 @@ class MainWindow(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
 
-        # Layout principal
         layout = QHBoxLayout(central)
 
         # ==========================
-        # Menú lateral
+        # MENU
         # ==========================
         menu = QVBoxLayout()
 
@@ -65,55 +72,42 @@ class MainWindow(QMainWindow):
         menu_widget.setFixedWidth(220)
 
         # ==========================
-        # Páginas (Stack)
+        # STACKED PAGES
         # ==========================
         self.pages = QStackedWidget()
 
-        # Página 0: Dashboard
         self.dashboard = QLabel("Dashboard")
         self.dashboard.setStyleSheet("font-size:28px;")
 
-        # Página 1: Listas
         self.server_lists_view = ServerListsView()
-
-        # Página 2: Servidores (CRUD)
         self.servers_view = ServersView()
-
-        # Página 3: Bitácora (NUEVA)
         self.audit_log_view = AuditLogView()
 
-        # Agregar páginas al stack
-        self.pages.addWidget(self.dashboard)            # 0
-        self.pages.addWidget(self.server_lists_view)   # 1
-        self.pages.addWidget(self.servers_view)        # 2
-        self.pages.addWidget(self.audit_log_view)      # 3
+        # 👇 USERS VIEW (usa SSH shared)
+        self.users_view = UsersView(self.ssh_service)
+
+        self.pages.addWidget(self.dashboard)           # 0
+        self.pages.addWidget(self.server_lists_view)  # 1
+        self.pages.addWidget(self.servers_view)       # 2
+        self.pages.addWidget(self.audit_log_view)     # 3
+        self.pages.addWidget(self.users_view)         # 4
 
         # ==========================
-        # Layout principal
+        # LAYOUT
         # ==========================
         layout.addWidget(menu_widget)
         layout.addWidget(self.pages)
 
         # ==========================
-        # Eventos navegación
+        # NAVIGATION
         # ==========================
-        self.btn_dashboard.clicked.connect(
-            lambda: self.pages.setCurrentIndex(0)
-        )
-
-        self.btn_listas.clicked.connect(
-            lambda: self.pages.setCurrentIndex(1)
-        )
-
-        self.btn_servidores.clicked.connect(
-            lambda: self.pages.setCurrentIndex(2)
-        )
-
-        self.btn_bitacora.clicked.connect(
-            lambda: self.pages.setCurrentIndex(3)
-        )
+        self.btn_dashboard.clicked.connect(lambda: self.pages.setCurrentIndex(0))
+        self.btn_listas.clicked.connect(lambda: self.pages.setCurrentIndex(1))
+        self.btn_servidores.clicked.connect(lambda: self.pages.setCurrentIndex(2))
+        self.btn_bitacora.clicked.connect(lambda: self.pages.setCurrentIndex(3))
+        self.btn_usuarios.clicked.connect(lambda: self.pages.setCurrentIndex(4))
 
         # ==========================
-        # Vista inicial
+        # DEFAULT VIEW
         # ==========================
         self.pages.setCurrentIndex(0)
