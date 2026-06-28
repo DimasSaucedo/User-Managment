@@ -1,9 +1,19 @@
-from repositories.setting_repository import SettingRepository
+import sys
 
-repo = SettingRepository()
+from PySide6.QtWidgets import QApplication
 
-repo.set("theme", "dark")
-repo.set("window_width", "1400")
+from app.login_window import LoginWindow
 
-for setting in repo.get_all():
-    print(setting.clave, setting.valor)
+
+def main():
+
+    app = QApplication(sys.argv)
+
+    window = LoginWindow()
+    window.show()
+
+    sys.exit(app.exec())
+
+
+if __name__ == "__main__":
+    main()

@@ -49,3 +49,17 @@ class ServerListRepository(BaseRepository):
         self.commit()
 
         return True
+    
+    def update(self, id, nombre, descripcion):
+
+        item = self.get_by_id(id)
+
+        if not item:
+            return None
+
+        item.nombre = nombre
+        item.descripcion = descripcion
+
+        self.commit()
+
+        return item
