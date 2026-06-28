@@ -1,6 +1,9 @@
-def main():
-    print("ServerAdmin iniciado")
+from repositories.setting_repository import SettingRepository
 
+repo = SettingRepository()
 
-if __name__ == "__main__":
-    main()
+repo.set("theme", "dark")
+repo.set("window_width", "1400")
+
+for setting in repo.get_all():
+    print(setting.clave, setting.valor)

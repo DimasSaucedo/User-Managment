@@ -1,9 +1,5 @@
 from datetime import datetime
 
-from database.database import Base
-
-from datetime import datetime
-
 from sqlalchemy import (
     Column,
     Integer,
@@ -18,17 +14,19 @@ from sqlalchemy.orm import relationship
 
 from database.database import Base
 
-
 class ServerList(Base):
     __tablename__ = "server_lists"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-
     nombre = Column(String(100), nullable=False)
-
     descripcion = Column(String(255))
-
     created_at = Column(DateTime, default=datetime.now)
+
+    servers = relationship(
+        "Server",
+        back_populates="server_list",
+        cascade="all, delete-orphan"
+    )
     
 class Server(Base):
     __tablename__ = "servers"
