@@ -1,111 +1,97 @@
+"""
+Dialog para modificar grupos masivamente con expiración opcional.
+"""
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QTableWidget, QTableWidgetItem, QRadioButton,
-    QButtonGroup, QGroupBox, QProgressBar, QHeaderView, QFrame
+    QButtonGroup, QGroupBox, QProgressBar, QHeaderView,
+    QCheckBox, QDateTimeEdit
 )
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtCore import Qt, QThread, Signal, QDateTime
 from PySide6.QtGui import QColor
 
 
-# ------------------------------------------------------------------
-# Worker thread para no bloquear la UI
-# ------------------------------------------------------------------
 class BulkWorker(QThread):
-    progress = Signal(dict)   # emite cada resultado
+    progress = Signal(dict)
     finished = Signal()
 
-    def __init__(self, manager, targets, groups, action):
+    def __init__(self, manager, targets, groups, action, expire_at):
         super().__init__()
         self.manager = manager
         self.targets = targets
         self.groups = groups
         self.action = action
+        self.expire_at = expire_at
 
     def run(self):
         results = self.manager.bulk_modify_groups(
-            self.targets, self.groups, self.action
+            self.targets, self.groups, self.action, self.expire_at
         )
         for r in results:
             self.progress.emit(r)
         self.finished.emit()
 
 
-# ------------------------------------------------------------------
-# Dialog principal
-# ------------------------------------------------------------------
 class BulkGroupDialog(QDialog):
-    """
-    Recibe:
-      - manager: MultiSSHManager (con conexiones activas)
-      - targets: lista de {"server_id": int, "server_name": str, "username": str}
-    """
-
     def __init__(self, manager, targets, parent=None):
         super().__init__(parent)
         self.manager = manager
         self.targets = targets
         self.worker = None
-
-        self.setWindowTitle("Modificar Grupos — Operación Masiva")
-        self.setMinimumWidth(700)
-        self.setMinimumHeight(540)
+        self.setWindowTitle("Modificar Grupos — Masivo")
+        self.setMinimumWidth(720)
+        self.setMinimumHeight(560)
         self._build_ui()
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
 
-        # --- Resumen de selección ---
-        layout.addWidget(QLabel(
-            f"<b>{len(self.targets)}</b> usuario(s) seleccionado(s):"
-        ))
-
-        summary = QTableWidget()
-        summary.setColumnCount(2)
+        layout.addWidget(QLabel(f"<b>{len(self.targets)}</b> usuario(s) seleccionado(s):"))
+        summary = QTableWidget(0, 2)
         summary.setHorizontalHeaderLabels(["Servidor", "Usuario"])
-        summary.setMaximumHeight(130)
+        summary.setMaximumHeight(120)
         summary.setEditTriggers(QTableWidget.NoEditTriggers)
         summary.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-
         for t in self.targets:
-            row = summary.rowCount()
-            summary.insertRow(row)
-            summary.setItem(row, 0, QTableWidgetItem(t["server_name"]))
-            summary.setItem(row, 1, QTableWidgetItem(t["username"]))
-
+            r = summary.rowCount(); summary.insertRow(r)
+            summary.setItem(r, 0, QTableWidgetItem(t["server_name"]))
+            summary.setItem(r, 1, QTableWidgetItem(t["username"]))
         layout.addWidget(summary)
 
-        # --- Acción y grupos ---
+        # Acción
         action_box = QGroupBox("Operación")
-        action_layout = QVBoxLayout(action_box)
-
-        self.radio_add = QRadioButton("Agregar a grupo(s)")
-        self.radio_remove = QRadioButton("Quitar de grupo(s)")
+        al = QVBoxLayout(action_box)
+        self.radio_add = QRadioButton("Agregar grupo(s)")
+        self.radio_remove = QRadioButton("Quitar grupo(s)")
         self.radio_add.setChecked(True)
+        bg = QButtonGroup(self); bg.addButton(self.radio_add); bg.addButton(self.radio_remove)
+        al.addWidget(self.radio_add); al.addWidget(self.radio_remove)
 
-        bg = QButtonGroup(self)
-        bg.addButton(self.radio_add)
-        bg.addButton(self.radio_remove)
-
-        action_layout.addWidget(self.radio_add)
-        action_layout.addWidget(self.radio_remove)
-
-        group_row = QHBoxLayout()
-        group_row.addWidget(QLabel("Grupos (separados por coma):"))
+        gr = QHBoxLayout()
+        gr.addWidget(QLabel("Grupos (coma):"))
         self.groups_edit = QLineEdit()
         self.groups_edit.setPlaceholderText("sudo, docker, www-data")
-        group_row.addWidget(self.groups_edit)
-        action_layout.addLayout(group_row)
-
+        gr.addWidget(self.groups_edit)
+        al.addLayout(gr)
         layout.addWidget(action_box)
 
-        # --- Resultados ---
-        layout.addWidget(QLabel("Resultados:"))
+        # Expiración
+        exp_box = QGroupBox("Expiración del grupo (solo aplica al agregar)")
+        el = QVBoxLayout(exp_box)
+        self.chk_expire = QCheckBox("Remover automáticamente en fecha/hora:")
+        self.dt_expire = QDateTimeEdit(QDateTime.currentDateTime().addDays(1))
+        self.dt_expire.setDisplayFormat("yyyy-MM-dd HH:mm")
+        self.dt_expire.setEnabled(False)
+        self.chk_expire.toggled.connect(self.dt_expire.setEnabled)
+        self.radio_remove.toggled.connect(lambda c: exp_box.setEnabled(not c))
+        el.addWidget(self.chk_expire)
+        el.addWidget(self.dt_expire)
+        layout.addWidget(exp_box)
 
-        self.result_table = QTableWidget()
-        self.result_table.setColumnCount(4)
-        self.result_table.setHorizontalHeaderLabels(
-            ["Servidor", "Usuario", "Grupo", "Estado"]
-        )
+        # Resultados
+        layout.addWidget(QLabel("Resultados:"))
+        self.result_table = QTableWidget(0, 4)
+        self.result_table.setHorizontalHeaderLabels(["Servidor", "Usuario", "Grupo", "Estado"])
         self.result_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.result_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         layout.addWidget(self.result_table)
@@ -114,58 +100,46 @@ class BulkGroupDialog(QDialog):
         self.progress_bar.setVisible(False)
         layout.addWidget(self.progress_bar)
 
-        # --- Botones ---
-        btn_layout = QHBoxLayout()
-        self.btn_run = QPushButton("Ejecutar")
-        self.btn_run.setDefault(True)
+        btns = QHBoxLayout()
+        self.btn_run = QPushButton("Ejecutar"); self.btn_run.setDefault(True)
         self.btn_close = QPushButton("Cerrar")
-        btn_layout.addStretch()
-        btn_layout.addWidget(self.btn_run)
-        btn_layout.addWidget(self.btn_close)
-        layout.addLayout(btn_layout)
+        btns.addStretch(); btns.addWidget(self.btn_run); btns.addWidget(self.btn_close)
+        layout.addLayout(btns)
 
         self.btn_run.clicked.connect(self._run)
         self.btn_close.clicked.connect(self.accept)
 
     def _run(self):
-        raw = self.groups_edit.text().strip()
-        if not raw:
+        groups = [g.strip() for g in self.groups_edit.text().split(",") if g.strip()]
+        if not groups:
             return
-
-        groups = [g.strip() for g in raw.split(",") if g.strip()]
         action = "add" if self.radio_add.isChecked() else "remove"
-        total = len(self.targets) * len(groups)
+        expire_at = None
+        if action == "add" and self.chk_expire.isChecked():
+            expire_at = self.dt_expire.dateTime().toString("yyyy-MM-dd HH:mm")
 
         self.result_table.setRowCount(0)
+        self._done = 0
+        total = len(self.targets) * len(groups)
+        self.progress_bar.setMaximum(total); self.progress_bar.setValue(0)
         self.progress_bar.setVisible(True)
-        self.progress_bar.setMaximum(total)
-        self.progress_bar.setValue(0)
         self.btn_run.setEnabled(False)
-        self._done_count = 0
 
-        self.worker = BulkWorker(self.manager, self.targets, groups, action)
+        self.worker = BulkWorker(self.manager, self.targets, groups, action, expire_at)
         self.worker.progress.connect(self._on_result)
-        self.worker.finished.connect(self._on_finished)
+        self.worker.finished.connect(lambda: (
+            self.btn_run.setEnabled(True),
+            self.progress_bar.setVisible(False)
+        ))
         self.worker.start()
 
-    def _on_result(self, result):
-        row = self.result_table.rowCount()
-        self.result_table.insertRow(row)
-
-        self.result_table.setItem(row, 0, QTableWidgetItem(result["server_name"]))
-        self.result_table.setItem(row, 1, QTableWidgetItem(result["username"]))
-        self.result_table.setItem(row, 2, QTableWidgetItem(result["group"]))
-
-        status_text = "✓ OK" if result["ok"] else f"✗ {result['msg']}"
-        status_item = QTableWidgetItem(status_text)
-        status_item.setForeground(
-            QColor("#a6e3a1") if result["ok"] else QColor("#f38ba8")
-        )
-        self.result_table.setItem(row, 3, status_item)
-
-        self._done_count += 1
-        self.progress_bar.setValue(self._done_count)
-
-    def _on_finished(self):
-        self.btn_run.setEnabled(True)
-        self.progress_bar.setVisible(False)
+    def _on_result(self, r):
+        row = self.result_table.rowCount(); self.result_table.insertRow(row)
+        self.result_table.setItem(row, 0, QTableWidgetItem(r["server_name"]))
+        self.result_table.setItem(row, 1, QTableWidgetItem(r["username"]))
+        self.result_table.setItem(row, 2, QTableWidgetItem(r["group"]))
+        txt = "✓ OK" if r["ok"] else f"✗ {r['msg']}"
+        item = QTableWidgetItem(txt)
+        item.setForeground(QColor("#a6e3a1") if r["ok"] else QColor("#f38ba8"))
+        self.result_table.setItem(row, 3, item)
+        self._done += 1; self.progress_bar.setValue(self._done)
