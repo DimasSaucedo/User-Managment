@@ -1,10 +1,10 @@
 from PySide6.QtWidgets import QApplication
 from app.ui.login_window import LoginWindow
-# from app.database.init_db import init_db
+from app.database.database import run_migrations
 import sys
 
 if __name__ == "__main__":
-    # init_db()
+    run_migrations()
     app = QApplication(sys.argv)
 
     window = LoginWindow()

@@ -1,3 +1,8 @@
+"""
+Vista de usuarios multi-servidor.
+Columnas: Servidor | Usuario | UID | GID | Home | Shell | Grupos
+Acciones: Modificar Grupos (masivo), Gestión Usuarios (crear/editar/eliminar)
+"""
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox,
@@ -17,7 +22,7 @@ from app.dialogs.bulk_user_dialog import BulkUserDialog
 class FetchWorker(QThread):
     status = Signal(str)
     users_ready = Signal(list)
-    connect_results = Signal(dict)
+    connect_errors = Signal(list)   # lista de strings de error
 
     def __init__(self, manager):
         super().__init__()
@@ -26,7 +31,8 @@ class FetchWorker(QThread):
     def run(self):
         self.status.emit("Conectando servidores…")
         results = self.manager.connect_all()
-        self.connect_results.emit(results)
+        errors = [r["error"] for r in results.values() if not r["ok"] and r.get("error")]
+        self.connect_errors.emit(errors)
         ok = sum(1 for r in results.values() if r["ok"])
         self.status.emit(f"Conectados {ok}/{len(results)} — obteniendo usuarios y grupos…")
         users = self.manager.list_users_all()
@@ -34,6 +40,10 @@ class FetchWorker(QThread):
 
 
 class MultiUsersView(QWidget):
+    """
+    Si se pasa manager_provider (callable), usa el manager del Dashboard.
+    Si no, crea el suyo propio (modo standalone).
+    """
 
     COL_SERVER  = 0
     COL_USER    = 1
@@ -43,11 +53,19 @@ class MultiUsersView(QWidget):
     COL_SHELL   = 5
     COL_GROUPS  = 6
 
-    def __init__(self):
+    def __init__(self, manager_provider=None):
         super().__init__()
-        self.manager = MultiSSHManager()
+        self._manager_provider = manager_provider
+        self._own_manager = MultiSSHManager()
         self.all_users: list[dict] = []
+        self._workers = []   # mantener referencias para evitar GC
         self._build_ui()
+
+    @property
+    def manager(self) -> MultiSSHManager:
+        if self._manager_provider:
+            return self._manager_provider()
+        return self._own_manager
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
@@ -103,8 +121,25 @@ class MultiUsersView(QWidget):
         act.addWidget(self.btn_manage_users)
         layout.addLayout(act)
 
+        # Si hay manager externo, ocultar selector propio
+        if self._manager_provider:
+            self.btn_connect.setVisible(False)
+
         # Señales
         self.btn_connect.clicked.connect(self._open_server_selector)
+
+    def showEvent(self, event):
+        """Auto-recargar al mostrar la vista si hay conexiones activas."""
+        super().showEvent(event)
+        active = [c for c in self.manager.connections.values() if c.client]
+        if active and not self.all_users:
+            self._fetch_users()
+        elif not active:
+            n = len(self.manager.connections)
+            self.status_label.setText(
+                f"Sin conexiones activas. Ve al Dashboard ({n} servidor(es) configurado(s))."
+                if n else "Sin servidores conectados. Ve al Dashboard primero."
+            )
         self.btn_refresh.clicked.connect(self._fetch_users)
         self.btn_modify_groups.clicked.connect(self._open_bulk_groups)
         self.btn_manage_users.clicked.connect(self._open_manage_users)
@@ -131,19 +166,24 @@ class MultiUsersView(QWidget):
 
     # ── Fetch ─────────────────────────────────────────────────────────
     def _fetch_users(self):
+        active = [c for c in self.manager.connections.values() if c.client]
+        if not active:
+            self.status_label.setText("Sin servidores conectados. Ve al Dashboard primero.")
+            return
         self.table.setRowCount(0); self.all_users = []
-        self.status_label.setText("Conectando…")
+        self.status_label.setText("Obteniendo usuarios…")
         self.btn_refresh.setEnabled(False); self.btn_connect.setEnabled(False)
-        self.worker = FetchWorker(self.manager)
-        self.worker.status.connect(self.status_label.setText)
-        self.worker.connect_results.connect(self._show_connect_errors)
-        self.worker.users_ready.connect(self._populate_table)
-        self.worker.start()
+        worker = FetchWorker(self.manager)
+        self._workers.append(worker)
+        worker.status.connect(self.status_label.setText)
+        worker.connect_errors.connect(self._show_connect_errors)
+        worker.users_ready.connect(self._populate_table)
+        worker.finished.connect(lambda: self._workers.remove(worker))
+        worker.start()
 
-    def _show_connect_errors(self, results):
-        failed = [r["error"] for r in results.values() if not r["ok"]]
-        if failed:
-            QMessageBox.warning(self, "Errores de conexión", "\n".join(failed))
+    def _show_connect_errors(self, errors: list):
+        if errors:
+            QMessageBox.warning(self, "Errores de conexión", "\n".join(errors))
 
     def _populate_table(self, users):
         self.all_users = users

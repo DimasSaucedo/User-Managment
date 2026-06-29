@@ -51,12 +51,14 @@ class Server(Base):
 
     created_at = Column(DateTime, default=datetime.now)
 
+    ultima_conexion = Column(DateTime, nullable=True)
+    ssh_username = Column(String(100), nullable=True)
+    ssh_password = Column(String(255), nullable=True)
+
     server_list = relationship(
         "ServerList",
         back_populates="servers"
     )
-    
-    ultima_conexion = Column(DateTime)
     
     operations = relationship(
     "OperationItem",
